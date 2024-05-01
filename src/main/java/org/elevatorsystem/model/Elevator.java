@@ -12,7 +12,7 @@ public class Elevator {
 
     private final DisplayBoard displayBoard;
     private int currentFloor;
-    private PriorityQueue<Integer> destinationFloor;
+    private final PriorityQueue<Integer> destinationFloors;
     private final int maxCapacity;
     private int currentLoad;
     private Direction currentDirection;
@@ -24,7 +24,7 @@ public class Elevator {
         this.currentFloor = 0;
         this.currentDirection = Direction.IDLE;
         this.state = State.IDLE;
-        this.destinationFloor = new PriorityQueue<>(new Comparator<Integer>() {
+        this.destinationFloors = new PriorityQueue<>(new Comparator<Integer>() {
             @Override
             public int compare(Integer o1, Integer o2) {
                 // Comparator logic to sort the queue based on direction and proximity
@@ -38,11 +38,46 @@ public class Elevator {
         displayBoard.updateDisplay(currentFloor, currentDirection);
     }
 
+    public synchronized void move() {
+        if (!destinationFloors.isEmpty() && state != State.MAINTAINANCE) {
+            int nextFloor = destinationFloors.poll();
+            currentFloor = nextFloor;
+            displayBoard.updateDisplay(currentFloor, calculateDirection());
+            state = State.MOVING;  // Update state to MOVING
+        } else {
+            state = State.IDLE;  // Set state to IDLE when there are no more floors to visit
+        }
+    }
+
     private Direction calculateDirection() {
-        if (!destinationFloor.isEmpty()) {
-            return currentFloor < destinationFloor.peek() ? Direction.UP : Direction.DOWN;
+        if (!destinationFloors.isEmpty()) {
+            return currentFloor < destinationFloors.peek() ? Direction.UP : Direction.DOWN;
         }
         return Direction.IDLE;
+    }
+
+    public synchronized void stop() {
+        if (state != State.MAINTAINANCE) {
+            state = State.IDLE;
+            displayBoard.updateDisplay(currentFloor, currentDirection);
+        }
+    }
+
+    public synchronized void addRequest(Request request) throws InvalidFloorException, ElevatorCapacityExceededException, ElevatorMaintainanceModeException {
+        if (state == State.MAINTAINANCE) {
+            throw new ElevatorMaintainanceModeException("Elevator is under maintenance.");
+        }
+        if (currentLoad + request.getNumberOfPeople() > maxCapacity) {
+            throw new ElevatorCapacityExceededException("Elevator capacity exceeded.");
+        }
+        if (request.getFloor() < 0 || request.getFloor() > 41) { // Assuming 'topFloor' is the highest floor in the building
+            throw new InvalidFloorException("Requested floor is invalid.");
+        }
+        destinationFloors.offer(request.getFloor());
+        updateDirection(request.getFloor());
+        if (currentDirection == Direction.IDLE) {
+            move();
+        }
     }
 
     private void updateDirection(int requestFloor) {
@@ -53,29 +88,14 @@ public class Elevator {
         }
     }
 
-    public boolean isFull() {
-        return currentLoad >= maxCapacity;
-    }
-
-
-    public DisplayBoard getDisplayBoard() {
-        return displayBoard;
+    public synchronized void enterMaintenanceMode() {
+        state = State.MAINTAINANCE;
+        destinationFloors.clear();  // Optionally clear all pending requests
+        displayBoard.updateDisplay(currentFloor, currentDirection);
     }
 
     public int getCurrentFloor() {
         return currentFloor;
-    }
-
-    public void setCurrentFloor(int currentFloor) {
-        this.currentFloor = currentFloor;
-    }
-
-    public PriorityQueue<Integer> getDestinationFloor() {
-        return destinationFloor;
-    }
-
-    public void setDestinationFloor(PriorityQueue<Integer> destinationFloor) {
-        this.destinationFloor = destinationFloor;
     }
 
     public int getMaxCapacity() {
@@ -86,49 +106,23 @@ public class Elevator {
         return currentLoad;
     }
 
-    public void setCurrentLoad(int currentLoad) {
-        this.currentLoad = currentLoad;
+    public Direction getCurrentDirection() {
+        return currentDirection;
     }
 
-    public void move() {
-        if (!destinationFloor.isEmpty() && state != State.MAINTAINANCE) {
-            int nextFloor = destinationFloor.peek();
-            currentFloor = nextFloor;
-            displayBoard.updateDisplay(currentFloor, calculateDirection());
-            destinationFloor.poll();
-            state = State.MOVING;  // Update state to MOVING
-        } else {
-            state = State.IDLE;  // Set state to IDLE when there are no more floors to visit
-        }
+    public State getState() {
+        return state;
     }
 
-    public void stop() {
-        if (state != State.MAINTAINANCE) {
-            state = State.IDLE;
-            displayBoard.updateDisplay(currentFloor, currentDirection);
-        }
+    public DisplayBoard getDisplayBoard() {
+        return displayBoard;
     }
 
-    public void addRequest(Request request) throws InvalidFloorException, ElevatorCapacityExceededException, ElevatorMaintainanceModeException {
-        if (this.state == State.MAINTAINANCE) {
-            throw new ElevatorMaintainanceModeException("Elevator is under maintenance.");
-        }
-        if (currentLoad + request.getNumberOfPeople() > maxCapacity) {
-            throw new ElevatorCapacityExceededException("Elevator capacity exceeded.");
-        }
-        if (request.getFloor() < 0 || request.getFloor() > 41) { // Assuming 'topFloor' is the highest floor in the building
-            throw new InvalidFloorException("Requested floor is invalid.");
-        }
-        destinationFloor.offer(request.getFloor());
-        updateDirection(request.getFloor());
-        if (currentDirection == Direction.IDLE) {
-            move();
-        }
+    public PriorityQueue<Integer> getDestinationFloors() {
+        return destinationFloors;
     }
 
-    public void enterMaintenanceMode() {
-        state = State.MAINTAINANCE;
-        destinationFloor.clear();  // Optionally clear all pending requests
-        displayBoard.updateDisplay(currentFloor, currentDirection);
+    public boolean isFull() {
+        return currentLoad >= maxCapacity;
     }
 }
