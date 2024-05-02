@@ -1,6 +1,6 @@
 package org.elevatorsystem.model;
 
 public enum State {
-    IDLE, MOVING, MAINTAINANCE
+    IDLE, MOVING, MAINTENANCE
 
 }

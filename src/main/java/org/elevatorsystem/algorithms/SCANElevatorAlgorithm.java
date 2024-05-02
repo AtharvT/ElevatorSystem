@@ -4,26 +4,31 @@ import org.elevatorsystem.model.Direction;
 import org.elevatorsystem.model.Elevator;
 
 import java.util.PriorityQueue;
+import java.util.Queue;
 
 public class SCANElevatorAlgorithm implements ElevatorAlgorithm {
-
     @Override
     public int getNextFloor(Elevator elevator) {
         int currentFloor = elevator.getCurrentFloor();
         Direction currentDirection = elevator.getCurrentDirection();
-        PriorityQueue<Integer> destinationFloor = elevator.getDestinationFloors();
-
-        if (destinationFloor.isEmpty()) {
+        Queue<Integer> destinationFloors = elevator.getDestinationFloorsPQ();
+        if (destinationFloors.isEmpty()) {
             return currentFloor;
         }
-
-        int nextFloor;
+        int nextFloor = currentFloor;
         if (currentDirection == Direction.UP) {
-            nextFloor = destinationFloor.stream().filter(floor -> floor >= currentFloor).min(Integer::compareTo).orElse(destinationFloor.peek());
+            for (int floor : destinationFloors) {
+                if (floor >= currentFloor) {
+                    nextFloor = Math.min(nextFloor, floor);
+                }
+            }
         } else {
-            nextFloor = destinationFloor.stream().filter(floor -> floor <= currentFloor).max(Integer::compareTo).orElse(destinationFloor.peek());
+            for (int floor : destinationFloors) {
+                if (floor <= currentFloor) {
+                    nextFloor = Math.max(nextFloor, floor);
+                }
+            }
         }
-
         return nextFloor;
     }
 }

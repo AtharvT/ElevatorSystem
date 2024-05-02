@@ -1,128 +1,162 @@
 package org.elevatorsystem.model;
 
+import org.elevatorsystem.algorithms.ElevatorAlgorithm;
+import org.elevatorsystem.algorithms.FCFSElevatorAlgorithm;
+import org.elevatorsystem.controller.FloorManager;
+import org.elevatorsystem.controller.MaintainanceManager;
 import org.elevatorsystem.exceptions.ElevatorCapacityExceededException;
 import org.elevatorsystem.exceptions.ElevatorMaintainanceModeException;
 import org.elevatorsystem.exceptions.InvalidFloorException;
 import org.elevatorsystem.model.request.Request;
+import org.elevatorsystem.observer.ElevatorObserver;
 
-import java.util.Comparator;
-import java.util.PriorityQueue;
+import java.util.*;
 
 public class Elevator {
-
-    private final DisplayBoard displayBoard;
+    private final int id;
     private int currentFloor;
-    private final PriorityQueue<Integer> destinationFloors;
-    private final int maxCapacity;
-    private int currentLoad;
     private Direction currentDirection;
     private State state;
+    private final List<ElevatorObserver> observers;
+    private final FloorManager floorManager;
+    private final MaintainanceManager maintenanceManager;
+    private int currentLoad;
+    private static final int MAX_CAPACITY = 50;
+    private final DisplayBoard displayBoard;
+    private final PriorityQueue<Integer> destinationFloorsPQ;
+    private final Queue<Integer> destinationFloorsQueue;
 
-    public Elevator(DisplayBoard displayBoard, int maxCapacity) {
+    public Elevator(int id, int initialFloor, DisplayBoard displayBoard) {
         this.displayBoard = displayBoard;
-        this.maxCapacity = maxCapacity;
-        this.currentFloor = 0;
+        if (initialFloor < 1 || initialFloor > 41) {
+            throw new IllegalArgumentException("Invalid initial floor number.");
+        }
+        this.id = id;
+        this.currentFloor = initialFloor;
         this.currentDirection = Direction.IDLE;
         this.state = State.IDLE;
-        this.destinationFloors = new PriorityQueue<>(new Comparator<Integer>() {
-            @Override
-            public int compare(Integer o1, Integer o2) {
-                // Comparator logic to sort the queue based on direction and proximity
-                if (currentDirection == Direction.UP) {
-                    return Integer.compare(o1, o2);
-                } else {
-                    return Integer.compare(o2, o1);
-                }
+        this.observers = new ArrayList<>();
+        this.floorManager = new FloorManager(this);
+        this.maintenanceManager = new MaintainanceManager(this);
+        this.destinationFloorsPQ = new PriorityQueue<>(Comparator.comparingInt(Math::abs));
+        this.destinationFloorsQueue = new LinkedList<>();
+    }
+
+    public void addObserver(ElevatorObserver observer) {
+        observers.add(observer);
+    }
+
+    public void removeObserver(ElevatorObserver observer) {
+        observers.remove(observer);
+    }
+
+    private void notifyStateChanged() {
+        for (ElevatorObserver observer : observers) {
+            observer.onElevatorStateChanged(this);
+        }
+    }
+
+    public void addRequest(Request request) {
+        try {
+            if (state == State.MAINTENANCE) {
+                throw new ElevatorMaintainanceModeException("Elevator is in maintenance mode.");
             }
-        });
-        displayBoard.updateDisplay(currentFloor, currentDirection);
-    }
-
-    public synchronized void move() {
-        if (!destinationFloors.isEmpty() && state != State.MAINTAINANCE) {
-            int nextFloor = destinationFloors.poll();
-            currentFloor = nextFloor;
-            displayBoard.updateDisplay(currentFloor, calculateDirection());
-            state = State.MOVING;  // Update state to MOVING
-        } else {
-            state = State.IDLE;  // Set state to IDLE when there are no more floors to visit
+            if (currentLoad + request.getNumberOfPeople() > MAX_CAPACITY) {
+                throw new ElevatorCapacityExceededException("Elevator capacity exceeded.");
+            }
+            if (request.getFloor() < 1 || request.getFloor() > 41) {
+                throw new InvalidFloorException("Invalid floor number.");
+            }
+            floorManager.addDestinationFloor(request.getFloor());
+            currentLoad = currentLoad + request.getNumberOfPeople();
+            if (state == State.IDLE) {
+                state = State.MOVING;
+                notifyStateChanged();
+                floorManager.moveElevator();
+            }
+        } catch (ElevatorMaintainanceModeException | ElevatorCapacityExceededException | InvalidFloorException e) {
+            System.out.println("Error: " + e.getMessage());
         }
     }
 
-    private Direction calculateDirection() {
-        if (!destinationFloors.isEmpty()) {
-            return currentFloor < destinationFloors.peek() ? Direction.UP : Direction.DOWN;
-        }
-        return Direction.IDLE;
+    public void removePassengers(int numberOfPeople) {
+        currentLoad = Math.max(0, currentLoad - numberOfPeople);
     }
 
-    public synchronized void stop() {
-        if (state != State.MAINTAINANCE) {
-            state = State.IDLE;
-            displayBoard.updateDisplay(currentFloor, currentDirection);
-        }
+    public void reachDestinationFloor(int floor) {
+        currentFloor = floor;
+        notifyStateChanged();
+        // Open elevator doors and let passengers exit
+        // ...
     }
 
-    public synchronized void addRequest(Request request) throws InvalidFloorException, ElevatorCapacityExceededException, ElevatorMaintainanceModeException {
-        if (state == State.MAINTAINANCE) {
-            throw new ElevatorMaintainanceModeException("Elevator is under maintenance.");
-        }
-        if (currentLoad + request.getNumberOfPeople() > maxCapacity) {
-            throw new ElevatorCapacityExceededException("Elevator capacity exceeded.");
-        }
-        if (request.getFloor() < 0 || request.getFloor() > 41) { // Assuming 'topFloor' is the highest floor in the building
-            throw new InvalidFloorException("Requested floor is invalid.");
-        }
-        destinationFloors.offer(request.getFloor());
-        updateDirection(request.getFloor());
-        if (currentDirection == Direction.IDLE) {
-            move();
-        }
-    }
+    // Getters and setters...
 
-    private void updateDirection(int requestFloor) {
-        if (currentFloor < requestFloor) {
-            currentDirection = Direction.UP;
-        } else if (currentFloor > requestFloor) {
-            currentDirection = Direction.DOWN;
-        }
-    }
-
-    public synchronized void enterMaintenanceMode() {
-        state = State.MAINTAINANCE;
-        destinationFloors.clear();  // Optionally clear all pending requests
-        displayBoard.updateDisplay(currentFloor, currentDirection);
+    public int getId() {
+        return id;
     }
 
     public int getCurrentFloor() {
         return currentFloor;
     }
 
-    public int getMaxCapacity() {
-        return maxCapacity;
-    }
-
-    public int getCurrentLoad() {
-        return currentLoad;
+    public void setCurrentFloor(int currentFloor) {
+        this.currentFloor = currentFloor;
+        notifyStateChanged();
     }
 
     public Direction getCurrentDirection() {
         return currentDirection;
     }
 
+    public void setCurrentDirection(Direction currentDirection) {
+        this.currentDirection = currentDirection;
+        displayBoard.updateDisplay(currentFloor, currentDirection);
+        notifyStateChanged();
+    }
+
     public State getState() {
         return state;
     }
 
-    public DisplayBoard getDisplayBoard() {
-        return displayBoard;
+    public void setState(State state) {
+        this.state = state;
+        displayBoard.updateDisplay(currentFloor, currentDirection);
+        notifyStateChanged();
     }
 
-    public PriorityQueue<Integer> getDestinationFloors() {
-        return destinationFloors;
+    public void enterMaintenanceMode() {
+        maintenanceManager.enterMaintenanceMode();
     }
 
-    public boolean isFull() {
-        return currentLoad >= maxCapacity;
+    public void exitMaintenanceMode() {
+        maintenanceManager.exitMaintenanceMode();
+    }
+
+
+    public void addDestinationFloor(int floor) {
+        destinationFloorsPQ.offer(floor);
+        destinationFloorsQueue.offer(floor);
+    }
+
+    public int removeDestinationFloor(ElevatorAlgorithm algorithm) {
+        if (algorithm instanceof FCFSElevatorAlgorithm) {
+            if (!destinationFloorsQueue.isEmpty()) {
+                return destinationFloorsQueue.poll();
+            }
+        } else {
+            if (!destinationFloorsPQ.isEmpty()) {
+                return destinationFloorsPQ.poll();
+            }
+        }
+        return currentFloor;
+    }
+
+    public PriorityQueue<Integer> getDestinationFloorsPQ() {
+        return destinationFloorsPQ;
+    }
+
+    public Queue<Integer> getDestinationFloorsQueue() {
+        return destinationFloorsQueue;
     }
 }

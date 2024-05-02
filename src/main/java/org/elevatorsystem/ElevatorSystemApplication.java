@@ -1,79 +1,104 @@
 package org.elevatorsystem;
 
 import org.elevatorsystem.algorithms.ElevatorAlgorithm;
-import org.elevatorsystem.algorithms.SCANElevatorAlgorithm;
+import org.elevatorsystem.algorithms.SSTFElevatorAlgorithm;
 import org.elevatorsystem.controller.ElevatorController;
-import org.elevatorsystem.exceptions.ElevatorCapacityExceededException;
-import org.elevatorsystem.exceptions.ElevatorMaintainanceModeException;
-import org.elevatorsystem.exceptions.InvalidFloorException;
 import org.elevatorsystem.model.Direction;
 import org.elevatorsystem.model.DisplayBoard;
 import org.elevatorsystem.model.Elevator;
-import org.elevatorsystem.model.request.ExternalRequest;
-import org.elevatorsystem.model.request.InternalRequest;
 
 import java.util.Scanner;
 import java.util.ArrayList;
 import java.util.List;
 
 public class ElevatorSystemApplication {
-    public static void main(String[] args) throws InvalidFloorException, ElevatorMaintainanceModeException, ElevatorCapacityExceededException {
-        final Scanner scanner = new Scanner(System.in);
-        List<Elevator> elevatorList = new ArrayList<>();
-        DisplayBoard displayBoard = new DisplayBoard();
+    private static final int NUMBER_OF_ELEVATORS = 4;
+    private static final int NUMBER_OF_FLOORS = 10;
 
-        // Initialize elevators with distinct display boards if needed
-        for (int i = 0; i < 4; i++) {
-            elevatorList.add(new Elevator(new DisplayBoard(), 50));
+    private ElevatorController elevatorController;
+    private List<Elevator> elevators;
+
+    public ElevatorSystemApplication() {
+        initializeElevators();
+        initializeElevatorController();
+    }
+
+    private void initializeElevators() {
+        elevators = new ArrayList<>();
+        for (int i = 1; i <= NUMBER_OF_ELEVATORS; i++) {
+            DisplayBoard displayBoard = new DisplayBoard();
+            Elevator elevator = new Elevator(i, 1, displayBoard);
+            elevators.add(elevator);
         }
+    }
 
-        ElevatorAlgorithm algorithm = new SCANElevatorAlgorithm(); // or any other algorithm
-        ElevatorController elevatorController = new ElevatorController(elevatorList, algorithm);
+    private void initializeElevatorController() {
+        ElevatorAlgorithm algorithm = new SSTFElevatorAlgorithm();
+        elevatorController = new ElevatorController(elevators, algorithm);
+    }
 
-        while (true) {
-            System.out.println("Enter command (ADD, MAINTAIN, EXIT):");
-            String command = scanner.next().toUpperCase();
+    public void run() {
+        Scanner scanner = new Scanner(System.in);
+        boolean exit = false;
 
-            switch (command) {
-                case "ADD":
-                    handleAddRequest(scanner, elevatorController);
+        while (!exit) {
+            displayMenu();
+            int choice = scanner.nextInt();
+
+            switch (choice) {
+                case 1:
+                    requestElevator(scanner);
                     break;
-                case "MAINTAIN":
-                    handleMaintenance(scanner, elevatorController);
+                case 2:
+                    selectDestinationFloor(scanner);
                     break;
-                case "EXIT":
-                    System.out.println("Exiting system...");
-                    scanner.close();
-                    System.exit(0);
+                case 3:
+                    exit = true;
+                    System.out.println("Exiting the Elevator System. Goodbye!");
                     break;
                 default:
-                    System.out.println("Invalid command.");
+                    System.out.println("Invalid choice. Please try again.");
                     break;
             }
         }
     }
 
-    private static void handleAddRequest(Scanner scanner, ElevatorController controller) throws InvalidFloorException, ElevatorMaintainanceModeException, ElevatorCapacityExceededException {
-        System.out.println("Enter request type (INTERNAL or EXTERNAL):");
-        String type = scanner.next().toUpperCase();
-        System.out.println("Enter floor number:");
-        int floor = scanner.nextInt();
-        System.out.println("Enter number of people:");
-        int people = scanner.nextInt();
+    private void displayMenu() {
+        System.out.println("Elevator System Menu:");
+        System.out.println("1. Request Elevator");
+        System.out.println("2. Select Destination Floor");
+        System.out.println("3. Exit");
+        System.out.print("Enter your choice: ");
+    }
 
-        if (type.equals("EXTERNAL")) {
-            System.out.println("Enter direction (UP or DOWN):");
-            String dir = scanner.next().toUpperCase();
-            Direction direction = Direction.valueOf(dir);
-            controller.processRequest(new ExternalRequest(direction, floor, people));
+    private void requestElevator(Scanner scanner) {
+        System.out.print("Enter the floor number: ");
+        int floor = scanner.nextInt();
+        System.out.print("Enter the direction (1 for UP, -1 for DOWN): ");
+        int directionChoice = scanner.nextInt();
+        Direction direction = (directionChoice == 1) ? Direction.UP : Direction.DOWN;
+        elevatorController.requestElevator(floor, direction);
+    }
+
+    private void selectDestinationFloor(Scanner scanner) {
+        System.out.print("Enter the elevator ID: ");
+        int elevatorId = scanner.nextInt();
+        System.out.print("Enter the destination floor: ");
+        int destinationFloor = scanner.nextInt();
+        Elevator elevator = findElevatorById(elevatorId);
+        if (elevator != null) {
+            elevator.addDestinationFloor(destinationFloor);
         } else {
-            controller.processRequest(new InternalRequest(floor, people));
+            System.out.println("Invalid elevator ID.");
         }
     }
 
-    private static void handleMaintenance(Scanner scanner, ElevatorController controller) {
-        System.out.println("Enter elevator ID for maintenance:");
-        int elevatorId = scanner.nextInt();
-        controller.enterMaintainanceMode(elevatorId);
+    private Elevator findElevatorById(int elevatorId) {
+        for (Elevator elevator : elevators) {
+            if (elevator.getId() == elevatorId) {
+                return elevator;
+            }
+        }
+        return null;
     }
 }
